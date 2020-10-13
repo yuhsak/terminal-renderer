@@ -1,6 +1,6 @@
 {
   "name": "terminal-renderer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Low level renderer for ANSI terminals written in TypeScript",
   "author": {
     "name": "Yuhsak Inoue",
