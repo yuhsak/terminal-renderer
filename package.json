@@ -1,7 +1,17 @@
 {
   "name": "terminal-renderer",
-  "version": "0.1.0",
-  "description": "Low level renderer for ANSI terminals",
+  "version": "0.1.1",
+  "description": "Low level renderer for ANSI terminals written in TypeScript",
+  "author": {
+    "name": "Yuhsak Inoue",
+    "email": "yuhsak.inoue@gmail.com",
+    "url": "https://github.com/Yuhsak"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Yuhsak/terminal-renderer.git"
+  },
   "main": "lib/common/index.js",
   "module": "lib/esm/index.js",
   "types": "lib/esm/index.d.ts",
@@ -21,8 +31,6 @@
     "start": "npm run watch",
     "prepublishOnly": "npm run build"
   },
-  "author": "",
-  "license": "MIT",
   "devDependencies": {
     "typescript": "^4.0.3",
     "jest": "26.5.2",
