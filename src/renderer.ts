@@ -10,10 +10,10 @@ type EndCallback = () => void
 
 export class TerminalRenderer extends Writable {
 
-  public position: XY
-  public savedPosition: XY
-  public width: number
-  public isTTY: boolean
+  private _position: XY
+  private _savedPosition: XY
+  private _width: number
+  private _isTTY: boolean
 
   /**
    *
@@ -23,13 +23,30 @@ export class TerminalRenderer extends Writable {
    */
   constructor(public stream: NodeJS.WriteStream | NodeJS.WritableStream, option?: WritableOptions) {
     super(option)
-    this.position = this.savedPosition = {x: 0, y: 0}
-    this.width = this.getWidth()
-    this.isTTY = 'isTTY' in this.stream ? (!!this.stream.isTTY) : false
+    this._position = this._savedPosition = {x: 0, y: 0}
+    this._width = this.getWidth()
+    this._isTTY = 'isTTY' in this.stream ? (!!this.stream.isTTY) : false
+  }
+
+  get position() {
+    return this._position
+  }
+
+  get savedPosition() {
+    return this._savedPosition
+  }
+
+  get width() {
+    this._width = this.getWidth()
+    return this._width
+  }
+
+  get isTTY() {
+    return this._isTTY
   }
 
   private setPosition(x: number, y: number) {
-    this.position = {x, y}
+    this._position = {x, y}
     return this
   }
 
@@ -39,7 +56,7 @@ export class TerminalRenderer extends Writable {
   }
 
   private setSavedPosition(x: number = 0, y: number = 0) {
-    this.savedPosition = {x, y}
+    this._savedPosition = {x, y}
     return this
   }
 
@@ -51,7 +68,7 @@ export class TerminalRenderer extends Writable {
 
   private getOutput(chunk: string | Buffer, encOrCallback?: BufferEncoding | WriteCallback | EndCallback) {
     const encoding = typeof encOrCallback === 'string' ? encOrCallback : 'utf-8'
-    const lines = stringToLines(decode(chunk, encoding), this.getWidth())
+    const lines = stringToLines(decode(chunk, encoding), this.width)
     this.updatePosition(lines)
     return Buffer.from(lines.join(EOL))
   }
@@ -61,15 +78,8 @@ export class TerminalRenderer extends Writable {
    * If the target stream isn't a tty, returns always 80
    */
   public getWidth() {
-    this.width = 'columns' in this.stream ? (this.stream.columns || 80) : 80
+    this._width = 'columns' in this.stream ? (this.stream.columns || 80) : 80
     return this.width
-  }
-
-  /**
-   * Get current cursor position relative to origin
-   */
-  public getPosition() {
-    return this.position
   }
 
   public write(chunk: string | Buffer, encOrCallback?: BufferEncoding | WriteCallback, callback?: WriteCallback): boolean {
