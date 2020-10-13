@@ -1,0 +1,36 @@
+{
+  "name": "terminal-renderer",
+  "version": "0.1.0",
+  "description": "Low level renderer for ANSI terminals",
+  "main": "lib/common/index.js",
+  "module": "lib/esm/index.js",
+  "types": "lib/esm/index.d.ts",
+  "files": [
+    "lib",
+    "src",
+    "!lib/**/*.tsbuildinfo",
+    "tsconfig.json",
+    "tsconfig.esm.json"
+  ],
+  "scripts": {
+    "test": "jest",
+    "clean": "rm -rf lib",
+    "build": "tsc -b tsconfig.json tsconfig.esm.json",
+    "watch": "npm run build -- --watch",
+    "prebuild": "npm run clean",
+    "start": "npm run watch",
+    "prepublishOnly": "npm run build"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^4.0.3",
+    "jest": "26.5.2",
+    "ts-jest": "^26.4.1",
+    "@types/jest": "^26.0.14"
+  },
+  "dependencies": {
+    "ansi-code": "^1.0.0",
+    "string-width": "^4.2.0"
+  }
+}
