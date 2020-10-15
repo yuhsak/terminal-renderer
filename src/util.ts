@@ -3,21 +3,52 @@ import getStringWidth from 'string-width'
 import {font} from 'ansi-code'
 
 import type {XY, ANSITextStyle} from './types'
+import {splitExceptANSI} from './str'
+
+export const decode = (value: string | Buffer, encoding?: BufferEncoding) => (typeof value === 'string' ? Buffer.from(value, encoding) : value).toString()
 
 export const subtractXY = (a: XY, b: XY) => ({
   x: a.x - b.x,
   y: a.y - b.y
 })
 
-const subtractByWidth = (str: string, width: number) => {
-  return str.split('').reduce((acc, char) => {
+export const addXY = (a: XY, b: XY) => ({
+  x: a.x + b.x,
+  y: a.y + b.y
+})
+
+export const maxXY = (xy: XY, limit: XY) => ({
+  x: Math.min(xy.x, limit.x),
+  y: Math.min(xy.y, limit.y)
+})
+
+export const minXY = (xy: XY, limit: XY) => ({
+  x: Math.max(xy.x, limit.x),
+  y: Math.max(xy.y, limit.y)
+})
+
+export const positiveXY = (xy: XY) => minXY(xy, {x: 0, y: 0})
+
+export const positiveMaxXY = (xy: XY, limit: XY) => maxXY(positiveXY(xy), limit)
+
+const substr = (str: string, width: number) => {
+  return splitExceptANSI(str).reduce((acc, char) => {
     const length = acc.length + getStringWidth(char)
     return length > width ? acc : {value: acc.value + char, length}
   }, {value: '', length: 0}).value
 }
 
-export const stringToLines = (str: string, maxLineWidth: number) => {
-  return str.split(EOL).map(line => subtractByWidth(line, maxLineWidth))
+const substrLinesByWidth = (lines: string[], width: number, x: number) => {
+  return lines.map((line, i) => substr(line, width - (i === 0 ? x : 0)))
+}
+
+const popLinesByHeight = (lines: string[], height: number, y: number) => {
+  const _lines = lines.slice()
+  let nextY
+  while ((nextY = y + _lines.length - 1) + 1 > height) {
+    _lines.pop()
+  }
+  return _lines
 }
 
 export const calcPosition = (lines: string[], currentPosition: XY) => {
@@ -25,6 +56,12 @@ export const calcPosition = (lines: string[], currentPosition: XY) => {
   const x = (lines.length > 1 ? 0 : currentPosition.x) + lastLineWidth
   const y = currentPosition.y + lines.length - 1
   return {x, y}
+}
+
+export const cropLines = (lines: string[], width: number, height: number, x: number, y: number) => {
+  const widthAdjusted = substrLinesByWidth(lines, width, x)
+  const heightAdjusted = popLinesByHeight(widthAdjusted, height, y)
+  return heightAdjusted
 }
 
 export const translateTextStyles = (styles: ANSITextStyle[]) => {
@@ -97,27 +134,5 @@ export const translateTextStyles = (styles: ANSITextStyle[]) => {
     }
     return style
   })
-
-}
-
-export const decode = (value: string | Buffer, encoding?: BufferEncoding) => (typeof value === 'string' ? Buffer.from(value, encoding) : value).toString()
-
-export type AsyncQueue = {
-  push: <T>(fn: () => Promise<T> | T) => Promise<T>
-}
-
-export const createAsyncQueue = (): AsyncQueue => {
-
-  const queue = [Promise.resolve()] as Promise<any>[]
-
-  const push = <T>(fn: () => Promise<T> | T): Promise<T> => {
-    const p = queue.slice(-1)[0].then(fn)
-    queue.push(p)
-    return p
-  }
-
-  return {
-    push,
-  }
 
 }

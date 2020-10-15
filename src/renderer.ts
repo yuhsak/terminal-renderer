@@ -3,17 +3,22 @@ import {EOL} from 'os'
 import {font, cursor, beep} from 'ansi-code'
 
 import type {XY, ANSITextStyle} from './types'
-import {subtractXY, stringToLines, calcPosition, translateTextStyles, decode} from './util'
+import {addXY, subtractXY, positiveMaxXY, cropLines, calcPosition, translateTextStyles, decode} from './util'
+import {extractANSI} from './str'
 
 type WriteCallback = (err?: Error | null) => void
 type EndCallback = () => void
+
+export type TerminalRendererOption = WritableOptions & {width?: number, height?: number}
 
 export class TerminalRenderer extends Writable {
 
   private _position: XY
   private _savedPosition: XY
-  private _width: number
+  private _width?: number
+  private _height?: number
   private _isTTY: boolean
+  private _overY: number = 0
 
   /**
    *
@@ -21,38 +26,51 @@ export class TerminalRenderer extends Writable {
    * @param {WritableOptions} option
    * @example const renderer = new TerminalRenderer(process.stdout)
    */
-  constructor(public stream: NodeJS.WriteStream | NodeJS.WritableStream, option?: WritableOptions) {
+  constructor(public stream: NodeJS.WriteStream | NodeJS.WritableStream, option: TerminalRendererOption={}) {
     super(option)
     this._position = this._savedPosition = {x: 0, y: 0}
-    this._width = this.getWidth()
+    this._width = option.width
+    this._height = option.height
     this._isTTY = 'isTTY' in this.stream ? (!!this.stream.isTTY) : false
   }
 
+  get cursorPosition() {
+    return {...this._position}
+  }
+
   get position() {
-    return this._position
+    return {...this._position, y: this._position.y + this._overY}
   }
 
   get savedPosition() {
-    return this._savedPosition
+    return {...this._savedPosition}
   }
 
   get width() {
-    this._width = this.getWidth()
-    return this._width
+    return this.getWidth()
+  }
+
+  get height() {
+    return this.getHeight()
   }
 
   get isTTY() {
     return this._isTTY
   }
 
-  private setPosition(x: number, y: number) {
-    this._position = {x, y}
-    return this
+  set width(v: number) {
+    this._width = v
   }
 
-  private setPositionRelative(x: number = 0, y: number = 0) {
-    this.setPosition(this.position.x + x, this.position.y + y)
-    return this
+  set height(v: number) {
+    this._height = v
+  }
+
+  private setPosition({x, y}: XY) {
+    const maxXY = {x: this.width, y: this.height - 1}
+    this._overY = y > maxXY.y ? 1 : y < 0 ? -1 : 0
+    this._position = positiveMaxXY({x,y}, maxXY)
+    return this._position
   }
 
   private setSavedPosition(x: number = 0, y: number = 0) {
@@ -60,17 +78,20 @@ export class TerminalRenderer extends Writable {
     return this
   }
 
-  private updatePosition(lines: string[]) {
-    const position = calcPosition(lines, this.position)
-    this.setPosition(position.x, position.y)
-    return this
-  }
-
-  private getOutput(chunk: string | Buffer, encOrCallback?: BufferEncoding | WriteCallback | EndCallback) {
+  private render(chunk: string | Buffer, encOrCallback?: BufferEncoding | WriteCallback | EndCallback) {
     const encoding = typeof encOrCallback === 'string' ? encOrCallback : 'utf-8'
-    const lines = stringToLines(decode(chunk, encoding), this.width)
-    this.updatePosition(lines)
-    return Buffer.from(lines.join(EOL))
+    const str = decode(chunk, encoding)
+    if (this._overY !== 0) {
+      return Buffer.from(extractANSI(str))
+    }
+    const lines = str.split(EOL)
+    const cropped = cropLines(lines, this.width, this.height, this.position.x, this.position.y)
+    const position = {
+      origin: calcPosition(lines, this.position),
+      cropped: calcPosition(cropped, this.position)
+    }
+    this.setPosition({x: position.cropped.x, y: position.origin.y})
+    return Buffer.from(cropped.join(EOL))
   }
 
   /**
@@ -78,19 +99,22 @@ export class TerminalRenderer extends Writable {
    * If the target stream isn't a tty, returns always 80
    */
   public getWidth() {
-    this._width = 'columns' in this.stream ? (this.stream.columns || 80) : 80
-    return this.width
+    return this._width ?? ('columns' in this.stream ? (this.stream.columns || 80) : 80)
+  }
+
+  public getHeight() {
+    return this._height ?? ('rows' in this.stream ? (this.stream.rows || 20) : 20)
   }
 
   public write(chunk: string | Buffer, encOrCallback?: BufferEncoding | WriteCallback, callback?: WriteCallback): boolean {
-    return super.write(this.getOutput(chunk, encOrCallback), callback)
+    return super.write(this.render(chunk, encOrCallback), callback)
   }
 
   public end(chunk?: string | Buffer | EndCallback, encOrCallback?: BufferEncoding | EndCallback, callback?: EndCallback): void {
     if (!chunk || typeof chunk === 'function') {
       return super.end(chunk)
     }
-    return super.end(this.getOutput(chunk, encOrCallback), callback)
+    return super.end(this.render(chunk, encOrCallback), callback)
   }
 
   _write(chunk: string | Buffer, encoding: BufferEncoding, callback: (error?: Error | null) => void) {
@@ -109,16 +133,24 @@ export class TerminalRenderer extends Writable {
     return this.stream.end(callback)
   }
 
-  public move(x: number = 0, y: number = 0) {
-    this.write(cursor.move(x,y))
-    this.setPositionRelative(x, y)
+  public to(x: number, y?: number) {
+    const maxXY = {
+      x: this.width - (this.position.x >= this.width ? 0 : 1),
+      y: this.height - (this.position.y >= this.height ? 0 : 1)
+    }
+    const dest = positiveMaxXY({x, y: y ?? this.position.y}, maxXY)
+    const source = this._position
+    const cursorPos = this.setPosition(dest)
+    const distance = subtractXY(cursorPos, source)
+    this.write(cursor.move(distance.x, distance.y))
     return this
   }
 
-  public to(x:number, y?:number) {
-    const _y = y ?? this.position.y
-    const distance = subtractXY({x, y: _y}, this.position)
-    this.move(distance.x, distance.y)
+  public move(x: number = 0, y: number = 0) {
+    const source = this.position
+    const distance = {x, y}
+    const dest = addXY(source, distance)
+    this.to(dest.x, dest.y)
     return this
   }
 
@@ -142,14 +174,19 @@ export class TerminalRenderer extends Writable {
     return this
   }
 
+  public eraseUp() {
+    this.write(cursor.eraseUp)
+    return this
+  }
+
   public clearLine() {
     this.eraseLine()
     this.to(0)
     return this
   }
 
-  public newLine() {
-    this.write(EOL)
+  public newLine(n: number=1) {
+    this.write(EOL.repeat(n))
     return this
   }
 
@@ -196,4 +233,4 @@ export class TerminalRenderer extends Writable {
 
 }
 
-export const createTerminalRenderer = (stream: NodeJS.WritableStream, option?: WritableOptions) => new TerminalRenderer(stream, option)
+export const createTerminalRenderer = (stream: NodeJS.WritableStream, option?: TerminalRendererOption) => new TerminalRenderer(stream, option)
